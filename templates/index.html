@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helm Mining System</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
+    <style>
+        body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:white; }
+        header { background:#111827; padding:20px; text-align:center; font-size:28px; font-weight:bold; }
+        .container { width:95%; max-width:1300px; margin:auto; padding:20px; }
+        .card { background:#1e293b; border-radius:12px; padding:20px; margin-bottom:20px; }
+        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px; }
+        input, select { width:100%; padding:12px; border:none; border-radius:8px; margin-top:10px; box-sizing: border-box; }
+        button { padding:12px 18px; border:none; border-radius:8px; cursor:pointer; margin-top:12px; background:#22c55e; color:white; font-weight:bold; }
+        button:hover { opacity:0.9; }
+        .stat { font-size:24px; color:#38bdf8; margin-top:10px; }
+        .log { background:#0f172a; height:180px; overflow:auto; padding:10px; border-radius:8px; margin-top:10px; font-size:14px; }
+        .hidden { display:none; }
+        .wallet { color:#4ade80; word-break:break-all; }
+        .secure { color:#facc15; font-size:13px; margin-top:10px; }
+    </style>
+</head>
+<body>
+
+<header>HELM AI MINING SYSTEM</header>
+
+<div class="container">
+    <div id="loginScreen" class="card">
+        <h2>Secure Portal</h2>
+        <input type="email" id="email" placeholder="Email">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="authAction('/api/login')">Login</button>
+        <button style="background: #3b82f6;" onclick="authAction('/api/register')">Register Account</button>
+        <div id="loginStatus" class="secure"></div>
+    </div>
+
+    <div id="dashboard" class="hidden">
+        <div class="grid">
+            <div class="card">
+                <h2>Mining Engine</h2>
+                <label>Mining Type</label>
+                <select id="miningType"><option>Bitcoin</option><option>Ethereum</option></select>
+                <label>Mining Speed</label>
+                <select id="miningSpeed"><option value="1000">Low</option><option value="5000">Medium</option></select>
+                <button onclick="startMining()">Start Mining</button>
+                <button onclick="stopMining()">Stop Mining</button>
+                <div class="stat" id="minerStatus">Stopped</div>
+                <div class="stat" id="hashrate">0 H/s</div>
+            </div>
+
+            <div class="card">
+                <h2>Wallet Connection</h2>
+                <div class="wallet" id="wallet">No wallet connected</div>
+                <button onclick="connectWallet()">Connect Wallet</button>
+            </div>
+
+            <div class="card">
+                <h2>Balance Display</h2>
+                <div class="stat" id="cryptoBalance">0.0000 BTC</div>
+                <div class="stat" id="usdBalance">$0.00</div>
+                <button onclick="refreshBalance()">Refresh Balance</button>
+            </div>
+
+            <div class="card">
+                <h2>Withdrawal Request</h2>
+                <input type="text" id="withdrawWallet" placeholder="Wallet Address">
+                <input type="number" id="withdrawAmount" step="any" placeholder="Amount">
+                <button onclick="requestWithdraw()">Submit Request</button>
+                <div id="withdrawStatus" style="margin-top:10px; color:#facc15;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let mining = false;
+let interval;
+let runtimeBalance = 0;
+let localMinedBuffer = 0;
+
+async function authAction(endpoint) {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+    if(!email || !password) return alert("Fill out credentials.");
+    
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ email, password })
+    });
+    
+    const resData = await response.json();
+    if(!response.ok) {
+        document.getElementById("loginStatus").innerText = resData.error;
+        return;
+    }
+    
+    if(endpoint.includes('login')) {
+        runtimeBalance = resData.balance;
+        document.getElementById("wallet").innerText = resData.wallet;
+        updateUIBalance();
+        document.getElementById("loginScreen").style.display = "none";
+        document.getElementById("dashboard").classList.remove("hidden");
+        setInterval(syncRewardsToDatabase, 10000);
+    } else {
+        alert(resData.message);
+    }
+}
+
+function updateUIBalance() {
+    document.getElementById("cryptoBalance").innerText = runtimeBalance.toFixed(6) + " BTC";
+    document.getElementById("usdBalance").innerText = "$" + (runtimeBalance * 65000).toFixed(2);
+}
+
+function startMining(){
+    if(mining) return;
+    mining = true;
+    interval = setInterval(()=>{
+        let increment = Math.random() / 50000;
+        runtimeBalance += increment;
+        localMinedBuffer += increment;
+        document.getElementById("hashrate").innerText = Math.floor(Math.random() * 5000) + " H/s";
+        updateUIBalance();
+    }, 1000);
+}
+
+function stopMining(){
+    mining = false;
+    clearInterval(interval);
+    syncRewardsToDatabase();
+}
+
+async function syncRewardsToDatabase() {
+    if (localMinedBuffer <= 0) return;
+    const tempBuffer = localMinedBuffer;
+    localMinedBuffer = 0; 
+    const response = await fetch('/api/miner/sync', {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ mined: tempBuffer })
+    });
+    const data = await response.json();
+    if(response.ok) {
+        runtimeBalance = data.balance;
+        updateUIBalance();
+    }
+}
+
+async function requestWithdraw(){
+    const wallet = document.getElementById("withdrawWallet").value;
+    const amount = document.getElementById("withdrawAmount").value;
+    if(!wallet || !amount) return;
+    await syncRewardsToDatabase();
+    const response = await fetch('/api/withdraw', {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ wallet, amount })
+    });
+    const data = await response.json();
+    if(response.ok) {
+        runtimeBalance = data.new_balance;
+        updateUIBalance();
+        document.getElementById("withdrawStatus").innerText = "Withdrawal success.";
+    } else {
+        document.getElementById("withdrawStatus").innerText = "Error: " + data.error;
+    }
+}
+
+async function refreshBalance(){
+    const response = await fetch('/api/user/data');
+    const data = await response.json();
+    if(response.ok) {
+        runtimeBalance = data.balance;
+        updateUIBalance();
+    }
+}
+</script>
+</body>
+</html>
