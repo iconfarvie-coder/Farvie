@@ -1,4 +1,8 @@
 import { navigateTo, context, requestExpandedMode } from "@devvit/web/client";
+import { inject } from '@vercel/analytics';
+
+// Initialize Vercel Web Analytics
+inject({ mode: 'production' });
 
 const docsLink = document.getElementById("docs-link") as HTMLDivElement;
 const playtestLink = document.getElementById("playtest-link") as HTMLDivElement;
